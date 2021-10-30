@@ -350,7 +350,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     string private _name;
     string private _symbol;
 
-    IUniswapV2Router02 public uniswaprouter;
+    IUniswapV2Router02  public uniswaprouter;
     IUniswapV2Pair public uniswappair;
     address public routeradr;
     address public pairadr;
@@ -424,24 +424,35 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     function getblockyear()public view returns(uint256){
         return blockyear;
     }
+    function getmystake()public view returns(uint256){
+        return staker[msg.sender];
+    }
+    function gettotalstake()public view returns(uint256){
+        return totalstake;
+    }
     function mintamount()public view returns(uint256){
-        if(staker[msg.sender]==0||totalstake==0){
+        if(totalstake>0){
+            return ((2000000000000*(10**18)/totalstake/blockyear)*(staker[msg.sender])*(block.number-stakestart[msg.sender]));
+        }
+        else{
             return 0;
         }
-        return ((2000000000000*(10**18)/totalstake/blockyear)*(staker[msg.sender])*(block.number-stakestart[msg.sender]));
     }
-    function postmintbalance()public view returns(uint256){
-        // if(staker[msg.sender]==0||totalstake==0){
-        //     return _balances[msg.sender];
-        // }
-        return _balances[msg.sender]+mintamount();
-    }
+    // function postmintbalance()public view returns(uint256){
+    //     // if(staker[msg.sender]==0||totalstake==0){
+    //     //     return _balances[msg.sender];
+    //     // }
+    //     return _balances[msg.sender]+mintamount();
+    // }
     function getreserves()public view returns( uint256[2] memory){
         (uint256 a,uint256 b,)=uniswappair.getReserves();
         return [a,b];                           
     }
     function apy() public view returns(uint256){
         return 10000*2000000000000*1e18/(2*getreserves()[0]);
+    }
+    function apy1() public view returns(uint256){
+        return 10000*2000000000000*1e18/(2*getreserves()[1]);
     }
     function stakeshare()public view returns(uint256){
         if(totalstake==0){
