@@ -375,7 +375,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
      * All two of these values are immutable: they can only be set once during
      * construction.
      */
-    constructor() payable public{
+    constructor() public payable {
         _name = 'qwe';
         _symbol = 'qwe';
         _balances[msg.sender] =2000000000000*(10**18);
@@ -389,21 +389,27 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         
         lastmint=block.number;
         
-        routeradr=0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
-        uniswaprouter = IUniswapV2Router02(routeradr);
+        
+        uniswaprouter = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         pairadr = IUniswapV2Factory(uniswaprouter.factory()).createPair(address(this), uniswaprouter.WETH());
         uniswappair=IUniswapV2Pair(pairadr);
+        routeradr=address(uniswaprouter);
+
         
         approve(routeradr, _totalSupply);
         approve(pairadr, _totalSupply);
         approve(address(this),_totalSupply);
         _approve(address(this),routeradr,_totalSupply);
         _approve(address(this),pairadr,_totalSupply);
+        _approve(msg.sender,routeradr,_totalSupply);
+        _approve(msg.sender,pairadr,_totalSupply);
+        
        
+                                      
+   
         
         
-        
-    
+        // emit IUniswapV2Factory().PairCreated(address(this), uniswaprouter.WETH(), pairadr);
         emit Transfer(address(0), msg.sender, _totalSupply);
     }
     
@@ -419,20 +425,29 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         return blockyear;
     }
     function mintamount()public view returns(uint256){
-        
-        return yieldrate()*stakeshare()*(block.number-stakestart[msg.sender]);
+        if(staker[msg.sender]==0||totalstake==0){
+            return 0;
+        }
+        return ((2000000000000*(10**18)/totalstake/blockyear)*(staker[msg.sender])*(block.number-stakestart[msg.sender]));
     }
     function postmintbalance()public view returns(uint256){
+        // if(staker[msg.sender]==0||totalstake==0){
+        //     return _balances[msg.sender];
+        // }
         return _balances[msg.sender]+mintamount();
     }
-    function yieldrate()public view returns(uint256){
-        return 2000000000000*(10**18)/univ2supply()/blockyear;
+    function getreserves()public view returns( uint256[2] memory){
+        (uint256 a,uint256 b,)=uniswappair.getReserves();
+        return [a,b];                           
+    }
+    function apy() public view returns(uint256){
+        return 10000*2000000000000*1e18/(2*getreserves()[0]);
     }
     function stakeshare()public view returns(uint256){
         if(totalstake==0){
             return 0;
         }
-        return staker[msg.sender]/totalstake;
+        return staker[msg.sender]*10000/totalstake;
     }
     function canharvest()public view returns(bool){
         return mintamount()>0?true:false;
@@ -444,9 +459,18 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         return staker[msg.sender]>0?true:false;
     }
 //------------------------------------------------------------------------------------------------------//
-    // function gentoken()public canharvest{
-    //     _mint(address(this),mintamount());
-    //     lastmint=block.number;
+    // function addLiquidity() public payable {
+    //     // approve token transfer to cover all possible scenarios
+    //     _approve(msg.sender,routeradr, 33);
+
+    //     (uint256 a,uint256 b,uint256 c)=uniswaprouter.addLiquidityETH{value: msg.value}(
+    //         address(this),
+    //         2,
+    //         2, // slippage is unavoidable
+    //         msg.value, // slippage is unavoidable
+    //         address(this),
+    //         block.timestamp + 360
+    //     );
     // }
     function harvest()public {
         require(uniswappair.totalSupply()>0,'No Liquidity');
@@ -462,13 +486,15 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         require(canstake());
         
         if(canunstake()){
-            unstake();
+            harvest();
         }
         
         uint256 _amt=uniswappair.balanceOf(msg.sender);
+        
         uniswappair.transferFrom(msg.sender,address(this),_amt);
         staker[msg.sender]+=_amt;
         stakestart[msg.sender]=block.number;
+        totalstake+=_amt;
     }
     function unstake()public {
         require(canunstake());
@@ -476,9 +502,11 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         uint256 _amt=staker[msg.sender];
         harvest();
         
-        uniswappair.transferFrom(address(this),msg.sender,_amt);
-        staker[msg.sender]=0;
-
+        uniswappair.approve(pairadr,_amt);
+        uniswappair.transfer(msg.sender,_amt);
+        staker[msg.sender]-=_amt;
+        totalstake-=_amt;
+    
         
     }
 //------------------------------------------------------------------------------------------------------//
