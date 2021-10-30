@@ -350,9 +350,10 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     string private _name;
     string private _symbol;
 
-    IUniswapV2Router02 public immutable uniswapV2Router;
-    address public immutable uniswapV2Pair;
-    address public router;
+    IUniswapV2Router02 public uniswaprouter;
+    IUniswapV2Pair public uniswappair;
+    address public routeradr;
+    address public pairadr;
     
     uint256 blocksec;
     uint256 blockday;
@@ -361,8 +362,10 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     uint256 maxfarmyear;
     
     uint256 lastmint;
-    
+    uint256 totalstake;
+
     mapping(address=>uint256) staker;
+    mapping(address=>uint256) stakestart;
     /**
      * @dev Sets the values for {name} and {symbol}.
      *
@@ -386,57 +389,94 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         
         lastmint=block.number;
         
-        router=0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(router);
-        uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory()).createPair(address(this), _uniswapV2Router.WETH());
+        routeradr=0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+        uniswaprouter = IUniswapV2Router02(routeradr);
+        pairadr = IUniswapV2Factory(uniswaprouter.factory()).createPair(address(this), uniswaprouter.WETH());
+        uniswappair=IUniswapV2Pair(pairadr);
         
-        approve(router, _totalSupply);
-        approve(uniswapV2Pair, _totalSupply);
-        _approve(address(this),router,_totalSupply);
-        _approve(address(this),uniswapV2Pair,_totalSupply);
+        approve(routeradr, _totalSupply);
+        approve(pairadr, _totalSupply);
+        approve(address(this),_totalSupply);
+        _approve(address(this),routeradr,_totalSupply);
+        _approve(address(this),pairadr,_totalSupply);
        
         
-        uniswapV2Router = _uniswapV2Router;
+        
         
     
         emit Transfer(address(0), msg.sender, _totalSupply);
     }
     
-    modifier canharvest{
-        require(IUniswapV2Pair(uniswapV2Pair).totalSupply()>0,'No Liquidity');
-        require(postmintbalance()>0,'Harvest not ready');
-        require(staker[msg.sender]>0,'No staked balance');
-      _;
-    }
+    // modifier canharvest{
+        
+    //   _;
+    // }
 //------------------------------------------------------------------------------------------------------//
     function univ2supply()public view returns(uint256){
-        return  IUniswapV2Pair(uniswapV2Pair).totalSupply();
+        return  uniswappair.totalSupply();
     }
     function getblockyear()public view returns(uint256){
         return blockyear;
     }
     function mintamount()public view returns(uint256){
-        return (2000000000000*(10**18)*(block.number-lastmint))/blockyear;
+        
+        return yieldrate()*stakeshare()*(block.number-stakestart[msg.sender]);
     }
     function postmintbalance()public view returns(uint256){
-        return _balances[address(this)]+mintamount();
+        return _balances[msg.sender]+mintamount();
+    }
+    function yieldrate()public view returns(uint256){
+        return 2000000000000*(10**18)/univ2supply()/blockyear;
+    }
+    function stakeshare()public view returns(uint256){
+        if(totalstake==0){
+            return 0;
+        }
+        return staker[msg.sender]/totalstake;
+    }
+    function canharvest()public view returns(bool){
+        return mintamount()>0?true:false;
+    }
+    function canstake()public view returns(bool){
+        return uniswappair.balanceOf(msg.sender)>0?true:false;
+    }
+    function canunstake()public view returns(bool){
+        return staker[msg.sender]>0?true:false;
     }
 //------------------------------------------------------------------------------------------------------//
-    function gentoken()public canharvest{
-        _mint(address(this),mintamount());
-        lastmint=block.number;
-    }
-    function harvest()public canharvest{
+    // function gentoken()public canharvest{
+    //     _mint(address(this),mintamount());
+    //     lastmint=block.number;
+    // }
+    function harvest()public {
+        require(uniswappair.totalSupply()>0,'No Liquidity');
+        // require(postmintbalance()>0,'Harvest not ready');
+        // require(staker[msg.sender]>0,'No staked balance');
         
+        if(canharvest()){
+            _mint(msg.sender,mintamount());
+            stakestart[msg.sender]=block.number;
+        }
     }
     function stake()public {
-        uint256 _amt=IUniswapV2Pair(uniswapV2Pair).balanceOf(msg.sender);
-        IUniswapV2Pair(uniswapV2Pair).transferFrom(msg.sender,address(this),_amt);
+        require(canstake());
+        
+        if(canunstake()){
+            unstake();
+        }
+        
+        uint256 _amt=uniswappair.balanceOf(msg.sender);
+        uniswappair.transferFrom(msg.sender,address(this),_amt);
         staker[msg.sender]+=_amt;
+        stakestart[msg.sender]=block.number;
     }
     function unstake()public {
+        require(canunstake());
+        
         uint256 _amt=staker[msg.sender];
-        IUniswapV2Pair(uniswapV2Pair).transferFrom(address(this),msg.sender,_amt);
+        harvest();
+        
+        uniswappair.transferFrom(address(this),msg.sender,_amt);
         staker[msg.sender]=0;
 
         
