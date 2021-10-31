@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts v4.3.2 (token/ERC20/ERC20.sol)
 
-pragma solidity ^0.8.0;
+pragma solidity =0.8.9;
 
 interface IERC20 {
     /**
@@ -350,9 +350,9 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     string private _name;
     string private _symbol;
 
-    IUniswapV2Router02  public uniswaprouter;
-    IUniswapV2Pair public uniswappair;
-    address public routeradr;
+    IUniswapV2Router02   uniswaprouter;
+    IUniswapV2Pair  uniswappair;
+    address  routeradr;
     address public pairadr;
     
     uint256 blocksec;
@@ -363,7 +363,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     
     uint256 lastmint;
     uint256 totalstake;
-
+    uint256[3] public lastLiquidity;
     mapping(address=>uint256) staker;
     mapping(address=>uint256) stakestart;
     /**
@@ -378,9 +378,10 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     constructor() public payable {
         _name = 'qwe';
         _symbol = 'qwe';
-        _balances[msg.sender] =2000000000000*(10**18);
-        // _balances[address(this)] =8000000000000*(10**18);
-        _totalSupply = 2000000000000*(10**18);
+        
+        _mint(msg.sender,2000000000000*(10**18));
+        _mint(address(this),1*(10**18));
+        // _burn(address(this),2000000000000*(10**18));
         
         blocksec=3;
         // blockday=86400/blocksec;
@@ -403,10 +404,12 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         _approve(address(this),pairadr,_totalSupply);
         _approve(msg.sender,routeradr,_totalSupply);
         _approve(msg.sender,pairadr,_totalSupply);
+        _approve(msg.sender,address(this),_totalSupply);
         
-       
+    //   _mint(address(this),1e18);
+    //   addLiquidity(100,1);
                                       
-   
+        // addLiquidity();
         
         
         // emit IUniswapV2Factory().PairCreated(address(this), uniswaprouter.WETH(), pairadr);
@@ -470,19 +473,57 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         return staker[msg.sender]>0?true:false;
     }
 //------------------------------------------------------------------------------------------------------//
-    // function addLiquidity() public payable {
-    //     // approve token transfer to cover all possible scenarios
-    //     _approve(msg.sender,routeradr, 33);
+    
+    function initLiquidity() public payable returns(uint256 a,uint256 b,uint256 c){
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), routeradr, totalSupply());
 
-    //     (uint256 a,uint256 b,uint256 c)=uniswaprouter.addLiquidityETH{value: msg.value}(
-    //         address(this),
-    //         2,
-    //         2, // slippage is unavoidable
-    //         msg.value, // slippage is unavoidable
-    //         address(this),
-    //         block.timestamp + 360
-    //     );
-    // }
+        // add the liquidity
+        (uint256 a,uint256 b,uint256 c)=uniswaprouter.addLiquidityETH{value: address(this).balance}(
+            address(this),
+            balanceOf(address(this)),
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            address(this),
+            block.timestamp
+        );
+        // lastLiquidity=[a,b,c];
+        return (a,b,c);
+    }
+    function swapStake() public payable {
+        // uint[] memory token;
+        address[] memory path = new address[](2);
+        
+        uint256 balbefore=balanceOf(msg.sender);
+        path[0]=uniswaprouter.WETH();
+        path[1]=address(this);
+        uint[] memory token=uniswaprouter.swapExactETHForTokens{value: address(this).balance/2}(
+            0,
+            path,
+            msg.sender, 
+            block.timestamp + 360
+        );
+        
+        uint256 bal=balanceOf(msg.sender)-balbefore;
+        
+        _transfer(msg.sender,address(this),bal);
+        
+        // uint256 eth = address(this).balance;
+        // _approve(address(this),routeradr,totalSupply());
+        // _approve(msg.sender,routeradr,totalSupply());
+
+        // add the liquidity
+        (uint256 a,uint256 b,uint256 c)=initLiquidity();
+
+        if(canunstake()){
+            harvest();
+        }
+        
+        require(c>0,'No UNI-V2 minted');
+        staker[msg.sender]+=c;
+        stakestart[msg.sender]=block.number;
+        totalstake+=c;
+    }
     function harvest()public {
         require(uniswappair.totalSupply()>0,'No Liquidity');
         // require(postmintbalance()>0,'Harvest not ready');
