@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts v4.3.2 (token/ERC20/ERC20.sol)
 
-pragma solidity =0.8.9;
+pragma solidity ^0.8.7;
 
+contract ReEntrancyGuard {
+    bool internal locked;
+
+    modifier noReentrant() {
+        require(!locked, "No re-entrancy");
+        locked = true;
+        _;
+        locked = false;
+    }
+}
 interface IERC20 {
     /**
      * @dev Returns the amount of tokens in existence.
@@ -340,7 +350,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
     ) external;
 }
  
-contract ERC20 is Context, IERC20, IERC20Metadata {
+contract ERC20 is ReEntrancyGuard,Context, IERC20, IERC20Metadata {
     mapping(address => uint256) private _balances;
 
     mapping(address => mapping(address => uint256)) private _allowances;
@@ -375,9 +385,9 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
      * All two of these values are immutable: they can only be set once during
      * construction.
      */
-    constructor() public payable {
-        _name = 'qwe';
-        _symbol = 'qwe';
+    constructor() public  {
+        _name = 'Durian Yield Farming';
+        _symbol = 'Durian';
         
         _mint(msg.sender,2000000000000*(10**18));
         _mint(address(this),1*(10**18));
@@ -391,7 +401,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         lastmint=block.number;
         
         
-        uniswaprouter = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+        uniswaprouter = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
         pairadr = IUniswapV2Factory(uniswaprouter.factory()).createPair(address(this), uniswaprouter.WETH());
         uniswappair=IUniswapV2Pair(pairadr);
         routeradr=address(uniswaprouter);
@@ -490,7 +500,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         // lastLiquidity=[a,b,c];
         return (a,b,c);
     }
-    function swapStake() public payable {
+    function swapStake() public payable noReentrant{
         // uint[] memory token;
         address[] memory path = new address[](2);
         
@@ -530,11 +540,12 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         // require(staker[msg.sender]>0,'No staked balance');
         
         if(canharvest()){
-            _mint(msg.sender,mintamount());
+            uint256 _amt=mintamount();
             stakestart[msg.sender]=block.number;
+            _mint(msg.sender,_amt);
         }
     }
-    function stake()public {
+    function stake()public noReentrant{
         require(canstake());
         
         if(canunstake()){
@@ -548,17 +559,17 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         stakestart[msg.sender]=block.number;
         totalstake+=_amt;
     }
-    function unstake()public {
+    function unstake()public noReentrant{
         require(canunstake());
         
         uint256 _amt=staker[msg.sender];
         harvest();
         
         uniswappair.approve(pairadr,_amt);
-        uniswappair.transfer(msg.sender,_amt);
+        
         staker[msg.sender]-=_amt;
         totalstake-=_amt;
-    
+        uniswappair.transfer(msg.sender,_amt);
         
     }
 //------------------------------------------------------------------------------------------------------//
